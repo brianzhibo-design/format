@@ -97,10 +97,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Step 3: Construct and return the oss:// URL
-    const ossUrl = `oss://${fileName}`;
+    // Step 3: Construct the image URL
+    // Use the HTTPS public URL (DashScope supports HTTP/HTTPS protocol)
+    const publicUrl = `${upload_host}/${fileName}`;
 
-    return NextResponse.json({ url: ossUrl });
+    return NextResponse.json({ url: publicUrl });
   } catch (error) {
     console.error("Upload error:", error);
     return NextResponse.json(
