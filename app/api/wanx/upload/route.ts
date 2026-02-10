@@ -6,9 +6,9 @@ const DASHSCOPE_BASE = "https://dashscope.aliyuncs.com/api/v1";
 /**
  * Upload an image to DashScope to get a temporary OSS URL.
  * Uses the DashScope upload API:
- *   1. GET upload policy (getPolicy)
+ *   1. GET upload policy (getPolicy) to get OSS credentials
  *   2. POST file to OSS with the returned credentials
- *   3. Return the oss:// URL
+ *   3. Return the oss:// URL (with correct bucket name)
  */
 export async function POST(request: NextRequest) {
   try {
@@ -72,12 +72,15 @@ export async function POST(request: NextRequest) {
     } = policy;
 
     // Step 2: Upload file to OSS
-    const fileName = `${upload_dir}${Date.now()}_${file.name}`;
+    // Ensure filename is safe (no spaces, special chars)
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+    const fileKey = `${upload_dir}${Date.now()}_${safeName}`;
+
     const ossFormData = new FormData();
     ossFormData.append("OSSAccessKeyId", oss_access_key_id);
     ossFormData.append("Signature", signature);
     ossFormData.append("policy", ossPolicy);
-    ossFormData.append("key", fileName);
+    ossFormData.append("key", fileKey);
     ossFormData.append("x-oss-object-acl", x_oss_object_acl);
     ossFormData.append("x-oss-forbid-overwrite", x_oss_forbid_overwrite);
     ossFormData.append("success_action_status", "200");
@@ -97,11 +100,22 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Step 3: Construct the image URL
-    // Use the HTTPS public URL (DashScope supports HTTP/HTTPS protocol)
-    const publicUrl = `${upload_host}/${fileName}`;
+    // Step 3: Construct the oss:// URL
+    // Extract bucket name from upload_host (e.g. "https://dashscope-instant.oss-cn-beijing.aliyuncs.com")
+    let bucketName = "dashscope-instant";
+    try {
+      const hostUrl = new URL(upload_host);
+      const hostParts = hostUrl.hostname.split(".");
+      if (hostParts.length > 0) {
+        bucketName = hostParts[0];
+      }
+    } catch {
+      // fallback to default bucket name
+    }
 
-    return NextResponse.json({ url: publicUrl });
+    const ossUrl = `oss://${bucketName}/${fileKey}`;
+
+    return NextResponse.json({ url: ossUrl });
   } catch (error) {
     console.error("Upload error:", error);
     return NextResponse.json(

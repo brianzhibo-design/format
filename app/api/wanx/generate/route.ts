@@ -92,11 +92,13 @@ export async function POST(request: NextRequest) {
     const data = await res.json();
 
     if (!res.ok) {
-      console.error("DashScope generate error:", data);
+      console.error("DashScope generate error:", JSON.stringify(data));
+      console.error("DashScope request body:", JSON.stringify(dashscopeBody));
       return NextResponse.json(
         {
           error: data.message || "视频生成任务创建失败",
           code: data.code,
+          detail: data,
         },
         { status: res.status }
       );
