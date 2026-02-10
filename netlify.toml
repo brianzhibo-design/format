@@ -6,5 +6,11 @@
   # NEXT_PUBLIC_* vars are designed to be embedded in client JS - skip secret scanning for them
   SECRETS_SCAN_OMIT_KEYS = "NEXT_PUBLIC_SUPABASE_URL,NEXT_PUBLIC_SUPABASE_ANON_KEY"
 
+[functions]
+  external_node_modules = ["sharp"]
+
+[functions."___netlify-server-handler"]
+  timeout = 26
+
 [[plugins]]
   package = "@netlify/plugin-nextjs"

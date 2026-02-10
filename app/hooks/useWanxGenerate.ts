@@ -3,6 +3,7 @@
 import { useState, useCallback, useRef } from "react";
 import type { WanxTemplate } from "@/app/lib/wanx-templates";
 import { getDefaultModel } from "@/app/lib/wanx-templates";
+import { compressImage } from "@/app/lib/image-utils";
 
 export type GenerateStatus =
   | "idle"
@@ -132,7 +133,7 @@ export function useWanxGenerate() {
 
       const model = getDefaultModel(template);
 
-      // Step 1: Upload image
+      // Step 1: Compress & upload image
       setState({
         status: "uploading",
         videoUrl: null,
@@ -141,8 +142,11 @@ export function useWanxGenerate() {
       });
 
       try {
+        // Compress image client-side before uploading (max 2048px, JPEG 85%)
+        const compressedFile = await compressImage(file, 2048, 0.85);
+
         const uploadForm = new FormData();
-        uploadForm.append("file", file);
+        uploadForm.append("file", compressedFile);
         uploadForm.append("model", model);
 
         const uploadRes = await fetch("/api/wanx/upload", {
