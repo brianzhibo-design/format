@@ -1,14 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/app/lib/supabase/server";
+import { createClient, createServiceClient } from "@/app/lib/supabase/server";
 
-const DASHSCOPE_BASE = "https://dashscope.aliyuncs.com/api/v1";
+const BUCKET_NAME = "wanx-uploads";
 
 /**
- * Upload an image to DashScope to get a temporary OSS URL.
- * Uses the DashScope upload API:
- *   1. GET upload policy (getPolicy) to get OSS credentials
- *   2. POST file to OSS with the returned credentials
- *   3. Return the oss:// URL (with correct bucket name)
+ * Upload an image to Supabase Storage (public bucket) and return the public URL.
+ * DashScope can directly access public HTTPS URLs.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -22,100 +19,44 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "未登录" }, { status: 401 });
     }
 
-    const apiKey = process.env.DASHSCOPE_API_KEY;
-    if (!apiKey) {
-      return NextResponse.json(
-        { error: "服务端未配置 DASHSCOPE_API_KEY" },
-        { status: 500 }
-      );
-    }
-
     const formData = await request.formData();
     const file = formData.get("file") as File | null;
-    const model = (formData.get("model") as string) || "wanx2.1-i2v-turbo";
 
     if (!file) {
       return NextResponse.json({ error: "未提供文件" }, { status: 400 });
     }
 
-    // Step 1: Get upload policy
-    const policyRes = await fetch(
-      `${DASHSCOPE_BASE}/uploads?action=getPolicy&model=${encodeURIComponent(model)}`,
-      {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-        },
-      }
-    );
+    // Use service role client to upload (bypasses RLS)
+    const adminClient = createServiceClient();
 
-    if (!policyRes.ok) {
-      const errText = await policyRes.text();
-      console.error("Get upload policy failed:", errText);
-      return NextResponse.json(
-        { error: "获取上传凭证失败" },
-        { status: 500 }
-      );
-    }
-
-    const policy = await policyRes.json();
-    const {
-      data: {
-        policy: ossPolicy,
-        signature,
-        upload_dir,
-        upload_host,
-        oss_access_key_id,
-        x_oss_object_acl,
-        x_oss_forbid_overwrite,
-      },
-    } = policy;
-
-    // Step 2: Upload file to OSS
-    // Ensure filename is safe (no spaces, special chars)
+    // Generate a unique file path
+    const timestamp = Date.now();
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-    const fileKey = `${upload_dir}${Date.now()}_${safeName}`;
+    const filePath = `${user.id}/${timestamp}_${safeName}`;
 
-    const ossFormData = new FormData();
-    ossFormData.append("OSSAccessKeyId", oss_access_key_id);
-    ossFormData.append("Signature", signature);
-    ossFormData.append("policy", ossPolicy);
-    ossFormData.append("key", fileKey);
-    ossFormData.append("x-oss-object-acl", x_oss_object_acl);
-    ossFormData.append("x-oss-forbid-overwrite", x_oss_forbid_overwrite);
-    ossFormData.append("success_action_status", "200");
-    ossFormData.append("file", file);
+    // Upload to Supabase Storage
+    const buffer = await file.arrayBuffer();
+    const { error: uploadError } = await adminClient.storage
+      .from(BUCKET_NAME)
+      .upload(filePath, buffer, {
+        contentType: file.type || "image/jpeg",
+        upsert: false,
+      });
 
-    const ossRes = await fetch(upload_host, {
-      method: "POST",
-      body: ossFormData,
-    });
-
-    if (!ossRes.ok) {
-      const errText = await ossRes.text();
-      console.error("OSS upload failed:", errText);
+    if (uploadError) {
+      console.error("Supabase Storage upload error:", uploadError);
       return NextResponse.json(
-        { error: "图片上传失败" },
+        { error: "图片上传失败: " + uploadError.message },
         { status: 500 }
       );
     }
 
-    // Step 3: Construct the oss:// URL
-    // Extract bucket name from upload_host (e.g. "https://dashscope-instant.oss-cn-beijing.aliyuncs.com")
-    let bucketName = "dashscope-instant";
-    try {
-      const hostUrl = new URL(upload_host);
-      const hostParts = hostUrl.hostname.split(".");
-      if (hostParts.length > 0) {
-        bucketName = hostParts[0];
-      }
-    } catch {
-      // fallback to default bucket name
-    }
+    // Get the public URL
+    const { data: urlData } = adminClient.storage
+      .from(BUCKET_NAME)
+      .getPublicUrl(filePath);
 
-    const ossUrl = `oss://${bucketName}/${fileKey}`;
-
-    return NextResponse.json({ url: ossUrl });
+    return NextResponse.json({ url: urlData.publicUrl });
   } catch (error) {
     console.error("Upload error:", error);
     return NextResponse.json(
