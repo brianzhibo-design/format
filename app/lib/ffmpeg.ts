@@ -1,5 +1,4 @@
-import { FFmpeg } from "@ffmpeg/ffmpeg";
-import { toBlobURL } from "@ffmpeg/util";
+import type { FFmpeg } from "@ffmpeg/ffmpeg";
 
 let ffmpegInstance: FFmpeg | null = null;
 let loadPromise: Promise<void> | null = null;
@@ -14,7 +13,11 @@ export async function getFFmpeg(): Promise<FFmpeg> {
     return ffmpegInstance!;
   }
 
-  ffmpegInstance = new FFmpeg();
+  // Dynamic import to ensure these only load in the browser
+  const { FFmpeg: FFmpegClass } = await import("@ffmpeg/ffmpeg");
+  const { toBlobURL } = await import("@ffmpeg/util");
+
+  ffmpegInstance = new FFmpegClass();
 
   loadPromise = (async () => {
     const baseURL = "https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm";

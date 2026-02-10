@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useCallback, useRef } from "react";
-import { fetchFile } from "@ffmpeg/util";
 import { getFFmpeg } from "@/app/lib/ffmpeg";
 import type { WallpaperPreset, VideoFormat } from "@/app/lib/presets";
 
@@ -61,7 +60,8 @@ export function useFFmpeg() {
         if (options.format === "gif") outputExt = "gif";
         const outputName = `output.${outputExt}`;
 
-        // Write input file
+        // Write input file (dynamic import to avoid server-side bundling)
+        const { fetchFile } = await import("@ffmpeg/util");
         await ffmpeg.writeFile(inputName, await fetchFile(options.file));
 
         // Build FFmpeg command
